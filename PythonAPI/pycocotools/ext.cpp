@@ -136,11 +136,11 @@ cpp_evaluate(int useCats,
         dtMatches_list.push_back(std::vector<double>(T*D));
         dtScores_list.push_back(std::vector<double>(D));
         // pointers
-        auto gtIg = &gtIgnore_list.back()[0];
-        auto dtIg = &dtIgnore_list.back()[0];
-        auto dtm = &dtMatches_list.back()[0];
-        auto dtScores = &dtScores_list.back()[0];
-        auto ious = &ious_map[key(imgId,catId)][0];
+	auto gtIg = (G==0) ? nullptr : &gtIgnore_list.back()[0];
+        auto dtIg = (D==0) ? nullptr : &dtIgnore_list.back()[0];
+        auto dtm = (D==0) ? nullptr: &dtMatches_list.back()[0];
+        auto dtScores = (D==0) ? nullptr : &dtScores_list.back()[0];
+        auto ious = (ious_map[key(imgId, catId)].size() == 0) ? nullptr : &ious_map[key(imgId,catId)][0];
         // set ignores
         for (int g = 0; g < G; g++) {
           double area = gtsm->area[g];
