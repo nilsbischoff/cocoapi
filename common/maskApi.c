@@ -40,6 +40,52 @@ void rleEncode( RLE *R, const byte *M, siz h, siz w, siz n ) {
   free(cnts);
 }
 
+void rleEncodePaste( RLE *R, const byte *M, siz h, siz w, siz n, siz oy, siz ox, siz oh, siz ow ) {
+  siz i, j, k, a=w*h, lp=ox, rp=ow-(ox+w), tp=oy, bp=oh-(oy+h); uint c, *cnts; byte p;
+  cnts = malloc(sizeof(uint)*(a+1));
+  for(i=0; i<n; i++) {
+    const byte *T=M+a*i; siz jj=0; k=0; p=0; c=lp*oh+tp;
+    for(j=0; j<a; j++) { 
+      if(bp+tp > 0) {
+        if(j-jj == h) {
+          // completed one column
+          if((k&1) == 0) {
+            // add to zero run
+            c += bp+tp;
+          } else {
+            // complete one run
+            cnts[k++]=c; 
+            // start zero run
+            c=tp+bp;
+            p=0;
+          }
+          jj = j;
+        }
+      }
+      if(T[j]!=p) { 
+        cnts[k++]=c; 
+        c=0; 
+        p=T[j]; 
+      }
+      c++; 
+    }
+    if (rp > 0 || bp > 0) {
+      if((k&1) == 0) {
+        // add to zero run
+        c += bp + rp*oh;
+      } else {
+        // complete one run
+        cnts[k++] = c;
+        c = bp + rp*oh;
+        p = 0;
+      }
+    }
+    cnts[k++]=c; 
+    rleInit(R+i,oh,ow,k,cnts);
+  }
+  free(cnts);
+}
+
 void rleDecode( const RLE *R, byte *M, siz n ) {
   siz i, j, k; for( i=0; i<n; i++ ) {
     byte v=0; for( j=0; j<R[i].m; j++ ) {
