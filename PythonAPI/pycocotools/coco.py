@@ -66,38 +66,77 @@ if PYTHON_VERSION == 2:
 elif PYTHON_VERSION == 3:
     from urllib.request import urlretrieve
 import ext
+import multiprocessing as mp
+
+def mp_pool_task(func, args):
+    #os.environ["OMP_PROC_BIND"]="close"
+    #os.environ["OMP_PLACES"]="cores"
+    results = func(*args)
+    if func is ext.cpp_evaluate:
+        return results
+
+def mp_pool_wrapper(proc_pid_map, func, args):
+    pid = os.getpid()
+    if proc_pid_map is None or len(proc_pid_map) == 0:
+        proc_pid_map = {pid:0}
+    proc_id = proc_pid_map[pid]
+
+    if func is ext.cpp_create_index:
+        newargs = list(args)
+        newargs.insert(2, proc_id)
+        mp_pool_task(func, tuple(newargs))
+
+    if func is ext.cpp_load_res_numpy:
+        newresFile = np.load(args[0], allow_pickle=True)
+        mp_pool_task(func, (newresFile, args[1]))
+
+    if func is ext.cpp_load_res_json:
+        mp_pool_task(func, args)
+
+    if func is ext.cpp_evaluate:
+        return mp_pool_task(func, args)
 
 def _isArrayLike(obj):
     return hasattr(obj, '__iter__') and hasattr(obj, '__len__')
 
-
 class COCO:
-    def __init__(self, annotation_file=None, use_ext=False):
+    def __init__(self, annotation_file=None, use_ext=False, multi_procs=(1,None), num_threads=1):
         """
         Constructor of Microsoft COCO helper class for reading and visualizing annotations.
         :param annotation_file (str): location of annotation file
         :param image_folder (str): location to the folder that hosts images.
         :return:
         """
-        self.use_ext = use_ext
         # load dataset
         self.dataset,self.anns,self.cats,self.imgs = dict(),dict(),dict(),dict()
         self.imgToAnns, self.catToImgs = defaultdict(list), defaultdict(list)
-        if not annotation_file == None:
-            print('loading annotations into memory...')
+
+        self.annotation_file = annotation_file
+        self.use_ext = use_ext
+        self.num_procs, self.proc_pid_map = multi_procs
+        self.num_threads = num_threads
+
+        if not self.annotation_file == None:
+            print('Loading annotations into memory...')
             tic = time.time()
             dataset = json.load(open(annotation_file, 'r'))
             assert type(dataset)==dict, 'annotation file format {} not supported'.format(type(dataset))
-            print('Done (t={:0.2f}s)'.format(time.time()- tic))
             self.dataset = dataset
-            self.createIndex(use_ext)
+            print('Done (t={:0.2f}s)'.format(time.time()- tic))
+            self.createIndex()
 
     def createIndex(self, use_ext=False):
+
         # create index
-        print('creating index...')
-        if use_ext:
-            ext.cpp_create_index(self.dataset)
+        print('Creating index...')
+        if self.use_ext or use_ext:
+            tic = time.time()
+            input_iter = (self.proc_pid_map, ext.cpp_create_index, 
+                    (self.annotation_file, self.num_procs, self.num_threads)) 
+            mp_pool_wrapper(*input_iter)
+            print('Done (t={:0.2f}s)'.format(time.time() - tic))
             return
+
         anns, cats, imgs = {}, {}, {}
         imgToAnns,catToImgs = defaultdict(list),defaultdict(list)
         if 'annotations' in self.dataset:
@@ -314,22 +353,25 @@ class COCO:
         :param   resFile (str)     : file name of result file
         :return: res (obj)         : result api object
         """
-        res = COCO(use_ext=use_ext)
-        res.dataset['images'] = [img for img in self.dataset['images']]
         print('Loading and preparing results...')
         tic = time.time()
-        if use_ext:
+        res = COCO()
+        if self.use_ext or use_ext:
             if type(resFile) == np.ndarray:
-                ext.cpp_load_res_numpy(res.dataset,resFile)
+                resfilename = ''.join(['/dev/shm/resfile_',str(os.getpid()),'.npy'])
+                np.save(resfilename, resFile)
+                input_iter = (self.proc_pid_map, ext.cpp_load_res_numpy, 
+                        (resfilename, self.num_threads)) 
+            elif type(resFile) == str:
+                input_iter = (self.proc_pid_map, ext.cpp_load_res_json, 
+                        (resFile, self.num_threads)) 
             else:
-                print('resFile is',resFile)
-                if type(resFile) == str:
-                    anns = json.load(open(resFile))
-                else:
-                    anns = resFile
-                ext.cpp_load_res(res.dataset,anns)
+                print("loadRes only supports numpy array or json file name as its input")
+            mp_pool_wrapper(*input_iter)
             print('DONE (t={:0.2f}s)'.format(time.time()- tic))
             return res
+
+        res.dataset['images'] = [img for img in self.dataset['images']]
         if type(resFile) == str: #or type(resFile) == unicode:
             anns = json.load(open(resFile))
         elif type(resFile) == np.ndarray:
@@ -377,7 +419,7 @@ class COCO:
         print('DONE (t={:0.2f}s)'.format(time.time()- tic))
 
         res.dataset['annotations'] = anns
-        res.createIndex(use_ext)
+        res.createIndex(self.use_ext)
         return res
 
     def download(self, tarDir = None, imgIds = [] ):

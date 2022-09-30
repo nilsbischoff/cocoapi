@@ -7,6 +7,7 @@ from collections import defaultdict
 from . import mask as maskUtils
 import copy
 import ext
+from .coco import mp_pool_wrapper, mp_pool_task 
 
 class COCOeval:
     # Interface for evaluating detection on the Microsoft COCO dataset.
@@ -58,7 +59,7 @@ class COCOeval:
     # Data, paper, and tutorials available at:  http://mscoco.org/
     # Code written by Piotr Dollar and Tsung-Yi Lin, 2015.
     # Licensed under the Simplified BSD License [see coco/license.txt]
-    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', use_ext=False, num_threads=1):
+    def __init__(self, cocoGt=None, cocoDt=None, iouType='segm', use_ext=False, multi_procs=(1, None), num_threads=1):
         '''
         Initialize CocoEval using coco APIs for gt and dt
         :param cocoGt: coco object with ground truth annotations
@@ -78,12 +79,14 @@ class COCOeval:
         self._paramsEval = {}               # parameters for evaluation
         self.stats = []                     # result summarization
         self.ious = {}                      # ious between all gts and dts
+
         self.use_ext = use_ext              # use c++ extension
         self.num_threads = num_threads      # number of OpenMP threads
-        if not cocoGt is None:
-            self.params.imgIds = sorted(cocoGt.getImgIds())
-            self.params.catIds = sorted(cocoGt.getCatIds())
-
+        self.num_procs, self.proc_pid_map = multi_procs
+        if not self.use_ext:
+            if not cocoGt is None:
+                self.params.imgIds = sorted(cocoGt.getImgIds())
+                self.params.catIds = sorted(cocoGt.getCatIds())
 
     def _prepare(self):
         '''
@@ -136,17 +139,26 @@ class COCOeval:
             print('useSegm (deprecated) is not None. Running {} evaluation'.format(p.iouType))
         print('Evaluate annotation type *{}*'.format(p.iouType))
 
-        p.imgIds = list(np.unique(p.imgIds))
-        if p.useCats:
-            p.catIds = list(np.unique(p.catIds))
+        if not self.use_ext:
+            p.imgIds = list(np.unique(p.imgIds))
+            if p.useCats:
+                p.catIds = list(np.unique(p.catIds))
+
         p.maxDets = sorted(p.maxDets)
         self.params=p
 
         if self.use_ext:
-            p.imgIds,p.catIds,self.eval = ext.cpp_evaluate(p.useCats,p.areaRng,p.iouThrs,p.maxDets,p.recThrs,p.iouType,self.num_threads)
-            toc = time.time()
-            print('DONE (t={:0.2f}s).'.format(toc-tic))
+            p.areaRng=np.array(p.areaRng)
+            p.maxDets=np.array(p.maxDets,dtype=np.int32)
+            input_iter = (self.proc_pid_map, ext.cpp_evaluate, 
+                        (p.useCats,p.areaRng,p.iouThrs,p.maxDets,p.recThrs,p.iouType,self.num_threads))
+            outputs = mp_pool_wrapper(*input_iter)
+            # if self.num_procs >1, outputs are only results from one proc; 
+            # please average coco_eval.stats after summarize() call
+            p.imgIds, p.catIds, self.eval = outputs
+            print('DONE (t={:0.2f}s).'.format(time.time()-tic))
             return
+
         self._prepare()
         # loop through images, area range, max detection number
         catIds = p.catIds if p.useCats else [-1]
@@ -453,15 +465,15 @@ class COCOeval:
                 # IoU
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
-                    s = s[t]
-                s = s[:,:,:,aind,mind]
+                    s = s[:,:,:,t,:]
+                s = s[:,aind,mind,:,:]
             else:
                 # dimension of recall: [TxKxAxM]
                 s = self.eval['recall']
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
-                    s = s[t]
-                s = s[:,:,aind,mind]
+                    s = s[:,:,:,t]
+                s = s[:,aind,mind,:]
             if len(s[s>-1])==0:
                 mean_s = -1
             else:

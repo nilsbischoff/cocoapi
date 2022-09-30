@@ -1,6 +1,5 @@
 from setuptools import setup, Extension
 import numpy as np
-import pybind11
 
 # To compile and install locally run "python setup.py build_ext --inplace"
 # To install library to Python site-packages run "python setup.py build_ext install"
@@ -14,10 +13,9 @@ ext_modules = [
     ),
     Extension(
         'ext',
-        sources=['pycocotools/ext.cpp'],
-        include_dirs = [pybind11.get_include()],
-        extra_compile_args=['-O3', '-Wall', '-shared', '-fopenmp', '-std=c++11', '-fPIC'],
-        extra_link_args=['-lgomp'],
+        sources=['pycocotools/ext.cpp', 'pycocotools/simdjson.cpp'],
+        extra_compile_args=['-O3', '-Wall', '-shared', '-fopenmp', '-std=c++17', '-fPIC', '-I/opt/conda/lib/python3.8/site-packages/numpy/core/include', '-Ipycocotools/'],
+        extra_link_args=['-lgomp', '-L/opt/conda/lib/python3.8/site-packages/numpy/core/lib', '-lnpymath'],
     )
 ]
 
@@ -29,7 +27,6 @@ setup(
         'setuptools>=18.0',
         'cython>=0.27.3',
         'matplotlib>=2.1.0',
-        'pybind11>=2.2',
     ],
     version='2.0+nv0.6.0',
     ext_modules= ext_modules
