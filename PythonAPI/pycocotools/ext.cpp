@@ -1073,7 +1073,7 @@ static PyObject* cpp_create_index(PyObject* self, PyObject* args)
 static PyObject* cpp_load_res_numpy(PyObject* self, PyObject* args) 
 {
   /* this function takes an numpy.ndarray of (rows x 7) and reads it into dts
-   * the 7 columns are [image_id, category_id, bbox[0], bbox[1], bbox[2], bbox[3], score]
+   * the 7 columns are [image_id, bbox[0], bbox[1], bbox[2], bbox[3], score, category_id]
    * the elements need to be in dtype=numpy.float32
    * */ 
 
@@ -1110,14 +1110,14 @@ static PyObject* cpp_load_res_numpy(PyObject* self, PyObject* args)
   #pragma omp parallel for num_threads(nthreads) 
   for (int64_t i = 0; i < dim1; i++) {
     int64_t image_id = static_cast<int64_t>(anns_data[i*dim2]);
-    int64_t category_id = static_cast<int64_t>(anns_data[i*dim2+1]);
+    int64_t category_id = static_cast<int64_t>(anns_data[i*dim2+6]);
     if (find(catids.begin(), catids.end(), category_id) == catids.end())
       continue;
     
     std::vector<float> bbox;
     for (int d=0; d<4; d++)
-      bbox.push_back(static_cast<float>(anns_data[i*dim2+d+2]));
-    float score = static_cast<float>(anns_data[i*dim2+6]);
+      bbox.push_back(static_cast<float>(anns_data[i*dim2+d+1]));
+    float score = static_cast<float>(anns_data[i*dim2+5]);
     float area = bbox[2]*bbox[3];
     int64_t id = i+1;
     int iscrowd = 0;
@@ -1278,7 +1278,7 @@ static PyMethodDef ext_Methods[] = {
     "Load results and create detection map.\n"
     "Parameters: results: numpy.ndarray\n"
     "            results has (number of detections in all images) rows and 7 columns,\n"
-    "            and the 7 columns are [image_id, category_id, bbox[4], score];\n"
+    "            and the 7 columns are [image_id, bbox[4], score, category_id];\n"
     "            results has dtype=numpy.float32.\n"
     "            nthreads:int\n"
     "Returns:    None \n"},
