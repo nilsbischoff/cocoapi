@@ -465,15 +465,27 @@ class COCOeval:
                 # IoU
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
-                    s = s[:,:,:,t,:]
-                s = s[:,aind,mind,:,:]
+                    if self.use_ext:
+                        s = s[:,:,:,t,:]
+                    else:
+                        s = s[t]
+                if self.use_ext:
+                    s = s[:,aind,mind,:,:]
+                else:
+                    s = s[:,:,:,aind,mind]
             else:
                 # dimension of recall: [TxKxAxM]
                 s = self.eval['recall']
                 if iouThr is not None:
                     t = np.where(iouThr == p.iouThrs)[0]
-                    s = s[:,:,:,t]
-                s = s[:,aind,mind,:]
+                    if self.use_ext:
+                        s = s[:,:,:,t]
+                    else:
+                        s = s[t]
+                if self.use_ext:
+                    s = s[:,aind,mind,:]
+                else:
+                    s = s[:,:,aind,mind]
             if len(s[s>-1])==0:
                 mean_s = -1
             else:
