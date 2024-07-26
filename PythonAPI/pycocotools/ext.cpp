@@ -245,7 +245,7 @@ static PyObject* cpp_evaluate(PyObject* self, PyObject* args) {
           
           // set ignores
           for (int g = 0; g < G; g++) {
-            gtIg[g] = (gtsm.ignore[g] || gtsm.area[g]<aRng0 || gtsm.area[g]>aRng1) ? 1 : 0;
+            gtIg[g] = (gtsm.ignore[g] || gtsm.area[g]<=aRng0 || gtsm.area[g]>aRng1) ? 1 : 0;
           }
           // get sorting indices
           auto gtind = sort_indices(gtIg, std::less<double>());
@@ -284,7 +284,7 @@ static PyObject* cpp_evaluate(PyObject* self, PyObject* args) {
           // set unmatched detections outside of area range to ignore
           for (int d = 0; d < D; d++) {
             float val = dtsm.area[dtind[d]];
-            double x3 = (val<aRng0 || val>aRng1);
+            double x3 = (val<=aRng0 || val>aRng1);
             for (int t = 0; t < T; t++) {
               double x1 = dtIg[t * D + d];
               double x2 = dtm[t * D + d];
